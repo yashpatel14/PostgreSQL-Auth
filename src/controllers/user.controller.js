@@ -5,6 +5,7 @@ import { pool } from "../db/index.js";
 import bcrypt from "bcryptjs";
 import { generateAccessToken, generateRefreshToken } from "../utils/helper.js";
 import { generateCookieOptions } from "../configs/cookies.js";
+import { uploadOnCloudinary } from "../utils/cloudinary.js";
 
 const register = asyncHandler(async (req, res) => {
   const { username, email, password } = req.body;
@@ -28,9 +29,22 @@ const register = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Something went wrong");
   }
 
+  let avatarUrl;
+  
+  if (req.files) {
+    try {
+      const uploaded = await uploadOnCloudinary(req.files.avatar[0].path);
+
+      avatarUrl = uploaded?.secure_url;
+      
+    } catch (err) {
+      console.log(err)
+    }
+  }
+
   const user = await pool.query(
-    "INSERT INTO users (username,email,password) VALUES ($1,$2,$3) RETURNING id, username, email",
-    [username, email, hashedPassword]
+    "INSERT INTO users (username,email,password,avatar) VALUES ($1,$2,$3,$4) RETURNING id, username, email,avatar",
+    [username, email, hashedPassword, avatarUrl]
   );
 
   if (!user) {
@@ -70,6 +84,13 @@ const login = asyncHandler(async (req, res) => {
 
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
+
+//   console.log(refreshToken);
+
+
+  await pool.query("UPDATE users SET refreshtoken = $1 WHERE id = $2", [
+    refreshToken,user.rows[0].id
+  ]);
 
   res
     .status(200)
